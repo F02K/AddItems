@@ -71,6 +71,8 @@ public final class AddItemsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(Component.text("Click to open the dashboard (valid 10 minutes, single use):",
                 NamedTextColor.GREEN));
         sender.sendMessage(Component.text(url, NamedTextColor.AQUA).clickEvent(ClickEvent.openUrl(url)));
+        String hint = plugin.dashboardAccessHint();
+        if (hint != null) sender.sendMessage(Component.text(hint, NamedTextColor.YELLOW));
     }
 
     private void give(CommandSender sender, String[] args) {

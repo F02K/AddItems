@@ -264,3 +264,10 @@ Items without a texture add no assets and keep their vanilla look.
 - Roles (admin/editor/viewer) are not implemented; every logged-in user can edit.
 - Not yet run on a real Paper 26.3 server (only unit tests for pack building and validation exist).
 - The dashboard speaks plain HTTP; use a reverse proxy for HTTPS when exposing it.
+- Remote access (2026-11-09): `dashboard.public-access: true` makes the dashboard listen on 0.0.0.0 (else `dashboard.bind`, default
+  127.0.0.1). Login links use `dashboard.public-url`, else `server-ip` from server.properties, else localhost
+  (`AddItemsPlugin#dashboardUrl`, `dashboardAccessHint`). The plugin logs the port that has to be open and warns about plain HTTP;
+  `/additems login` shows the hint when the link would point to localhost. The Secure cookie flag follows an https `public-url`.
+- One port (2026-11-09): `pack.host: dashboard` makes `DashboardServer` hand `/pack/...` to `PackHost#serve` before any login check
+  (the pack path is public by design, its name is the SHA-1); the separate pack listener is not started. The pack URL then falls back
+  to `dashboardUrl()` (`packBaseUrl`); `packProblem()` complains when the dashboard is local only. Default stays `separate`.

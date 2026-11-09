@@ -125,13 +125,19 @@ public final class AddItemsPlugin extends JavaPlugin implements Listener, Dashbo
         try {
             String publicUrl = getConfig().getString("dashboard.public-url", "");
             boolean secure = publicUrl.startsWith("https://");
-            dashboard = new DashboardServer(getConfig().getString("dashboard.bind", "127.0.0.1"),
-                    getConfig().getInt("dashboard.port", 8123), secure, registry, recipeRegistry, lootRegistry, vanilla,
-                    new GraphLayoutStore(getDataFolder().toPath()), auth, this, getLogger());
-            dashboard.start();
             packHost = new PackHost(getConfig().getString("pack.bind", "0.0.0.0"),
                     getConfig().getInt("pack.port", 8124));
-            packHost.start();
+            boolean samePort = packOnDashboardPort();
+            dashboard = new DashboardServer(dashboardBind(),
+                    getConfig().getInt("dashboard.port", 8123), secure, registry, recipeRegistry, lootRegistry, vanilla,
+                    new GraphLayoutStore(getDataFolder().toPath()), auth, this, samePort ? packHost : null, getLogger());
+            dashboard.start();
+            logDashboardAccess();
+            if (samePort) {
+                getLogger().info("The resource pack is served on the dashboard port (/pack/<sha1>.zip, no login needed for it).");
+            } else {
+                packHost.start();
+            }
         } catch (Exception e) {
             getLogger().severe("Could not start web servers: " + e.getMessage());
         }
@@ -143,11 +149,69 @@ public final class AddItemsPlugin extends JavaPlugin implements Listener, Dashbo
     public ItemFactory factory() { return factory; }
     public AuthManager auth() { return auth; }
 
+    /** The address the dashboard listens on: all interfaces when public access is on, else the configured local address. */
+    String dashboardBind() {
+        if (getConfig().getBoolean("dashboard.public-access", false)) return "0.0.0.0";
+        return getConfig().getString("dashboard.bind", "127.0.0.1");
+    }
+
+    /** pack.host: dashboard = players download the pack from the dashboard's port, separate = its own port. */
+    private boolean packOnDashboardPort() {
+        return "dashboard".equalsIgnoreCase(getConfig().getString("pack.host", "separate"));
+    }
+
+    /** Base URL players download the pack from: pack.public-url, or the dashboard address when it serves the pack. */
+    private String packBaseUrl() {
+        String configured = getConfig().getString("pack.public-url", "");
+        if (!configured.isBlank()) return configured.replaceAll("/+$", "");
+        if (packOnDashboardPort() && !dashboardIsLocalOnly()) return dashboardUrl();
+        return "";
+    }
+
+    private boolean dashboardIsLocalOnly() {
+        String bind = dashboardBind();
+        return bind.equals("127.0.0.1") || bind.equals("localhost") || bind.equals("::1");
+    }
+
+    /** The address team members open the dashboard at (used in login links). */
     public String dashboardUrl() {
         String url = getConfig().getString("dashboard.public-url", "");
         if (!url.isBlank()) return url.replaceAll("/+$", "");
-        return "http://" + getConfig().getString("dashboard.bind", "127.0.0.1")
-                + ":" + getConfig().getInt("dashboard.port", 8123);
+        int port = getConfig().getInt("dashboard.port", 8123);
+        if (!dashboardIsLocalOnly()) {
+            String ip = getServer().getIp();
+            return "http://" + (ip == null || ip.isBlank() ? "localhost" : ip) + ":" + port;
+        }
+        return "http://" + dashboardBind() + ":" + port;
+    }
+
+    /** Why the login link will not work for other people yet, or null. Shown by /additems login and in the log. */
+    public String dashboardAccessHint() {
+        if (dashboardIsLocalOnly()) return null;
+        String url = getConfig().getString("dashboard.public-url", "");
+        String ip = getServer().getIp();
+        if (url.isBlank() && (ip == null || ip.isBlank())) {
+            return "dashboard.public-url is empty: set it to the address people use (e.g. http://play.example.com:"
+                    + getConfig().getInt("dashboard.port", 8123) + "), otherwise the link points to localhost";
+        }
+        return null;
+    }
+
+    private void logDashboardAccess() {
+        int port = getConfig().getInt("dashboard.port", 8123);
+        if (dashboardIsLocalOnly()) {
+            getLogger().info("Dashboard on " + dashboardUrl() + " (this machine only). To let your team in, set "
+                    + "dashboard.public-access: true and open TCP port " + port + ".");
+            return;
+        }
+        getLogger().info("Dashboard listening on all interfaces: " + dashboardUrl() + " - TCP port " + port
+                + " must be open in the firewall / hosting panel for others to reach it.");
+        String hint = dashboardAccessHint();
+        if (hint != null) getLogger().warning(hint);
+        if (!getConfig().getString("dashboard.public-url", "").startsWith("https://")) {
+            getLogger().warning("The dashboard is reachable over plain HTTP. Use an HTTPS reverse proxy for anything but a "
+                    + "private network (login links and session cookies are otherwise readable on the way).");
+        }
     }
 
     // ------------------------------------------------------------------ pack
@@ -175,7 +239,11 @@ public final class AddItemsPlugin extends JavaPlugin implements Listener, Dashbo
     /** Why the pack cannot be sent right now, or null if it can. */
     public String packProblem() {
         if (lastPack == null) return "no pack built yet - run /additems pack build or use the dashboard";
-        if (getConfig().getString("pack.public-url", "").isBlank()) {
+        if (packOnDashboardPort() && dashboardIsLocalOnly()) {
+            return "pack.host is 'dashboard' but the dashboard is local only: set dashboard.public-access: true "
+                    + "(and open its port) so players can download the pack - then restart";
+        }
+        if (packBaseUrl().isBlank()) {
             return "pack.public-url is empty in config.yml (e.g. http://localhost:8124) - then /additems reload";
         }
         return null;
@@ -202,8 +270,7 @@ public final class AddItemsPlugin extends JavaPlugin implements Listener, Dashbo
             return;
         }
         PackBuilder.Result pack = lastPack;
-        String base = getConfig().getString("pack.public-url", "");
-        String url = base.replaceAll("/+$", "") + "/pack/" + pack.sha1() + ".zip";
+        String url = packBaseUrl() + "/pack/" + pack.sha1() + ".zip";
         getLogger().info("Sending pack " + pack.sha1().substring(0, 8) + " to " + player.getName() + " (" + url + ")");
         player.setResourcePack(PACK_ID, url, HexFormat.of().parseHex(pack.sha1()),
                 Component.text(getConfig().getString("pack.prompt", "")),

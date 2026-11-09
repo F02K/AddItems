@@ -1,11 +1,18 @@
 # AddItems configuration
 
 dashboard:
-  # Loopback by default. Only expose this (0.0.0.0) behind HTTPS / a reverse proxy.
+  # false: the dashboard only answers on this machine (127.0.0.1), the safe default.
+  # true: it listens on all interfaces so team members can open it from anywhere. Then the TCP port below must be
+  # reachable from outside: open it in the firewall / your hosting panel (it is a second port next to the Minecraft one).
+  # The dashboard speaks plain HTTP. For anything but a private network put an HTTPS reverse proxy in front of it
+  # (and set public-url to the https:// address).
+  public-access: false
+  # Only used when public-access is false; leave as is unless you know you need another local address.
   bind: 127.0.0.1
   port: 8123
-  # Base URL placed in the login links sent in-game, e.g. https://items.example.com
-  # Leave empty to derive http://<bind>:<port>.
+  # Address team members use to open the dashboard, put into the login links sent in-game,
+  # e.g. http://play.example.com:8123 or https://items.example.com
+  # Leave empty to derive it from server-ip (server.properties) or localhost.
   public-url: ""
 
 vanilla-assets:
@@ -15,11 +22,17 @@ vanilla-assets:
   enabled: true
 
 pack:
-  # The resource pack is served by its own listener because players must be able to reach it.
+  # Where players download the pack from:
+  #   separate  - its own port below (default; works while the dashboard stays local only)
+  #   dashboard - the dashboard's port, so only ONE extra port has to be open. Needs dashboard.public-access: true.
+  #               Only /pack/<sha1>.zip is reachable without a login; everything else of the dashboard still needs it.
+  host: separate
+  # Only used with host: separate
   bind: 0.0.0.0
   port: 8124
-  # URL players use to download the pack, e.g. http://play.example.com:8124
-  # Leave empty to disable sending the pack to players.
+  # URL players use to download the pack, e.g. http://play.example.com:8124 (host: separate).
+  # With host: dashboard you can leave this empty: the dashboard address (dashboard.public-url) is used.
+  # Leave empty (host: separate) to disable sending the pack to players.
   public-url: ""
   # Send the pack to players when they join, and require it.
   send-on-join: true

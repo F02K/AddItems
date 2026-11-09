@@ -11,8 +11,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Serves only the generated resource pack, publicly, at /pack/&lt;sha1&gt;.zip. Kept separate from the
- * dashboard so the dashboard can stay on loopback while players can still download the pack.
+ * Serves only the generated resource pack, publicly, at /pack/&lt;sha1&gt;.zip. Either on its own port (so the dashboard can
+ * stay on loopback while players still download the pack) or, with {@link #serve}, through the dashboard's port.
  */
 public final class PackHost {
 
@@ -48,6 +48,11 @@ public final class PackHost {
     }
 
     private void handle(HttpExchange ex) throws IOException {
+        serve(ex);
+    }
+
+    /** Answers one request for the pack (200 with the zip, else 404) and closes the exchange. */
+    public void serve(HttpExchange ex) throws IOException {
         try {
             Served served = current.get();
             String path = ex.getRequestURI().getPath();

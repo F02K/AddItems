@@ -92,6 +92,8 @@ public final class DashboardServer {
     private static final Pattern RECIPE_PATH =Pattern.compile("^/api/recipes/([a-z0-9_]{1,48})$");
 
     private final ItemRegistry registry;
+    /** When set, players download the pack from this port too (/pack/&lt;sha1&gt;.zip, the only path that needs no login). */
+    private final PackHost packHost;
     private final RecipeRegistry recipes;
     private final LootRegistry loot;
     private final GraphLayoutStore graph;
@@ -105,7 +107,9 @@ public final class DashboardServer {
                            RecipeRegistry recipes, LootRegistry loot, VanillaAssets vanilla, GraphLayoutStore graph,
                            AuthManager auth,
                            Actions actions,
+                           PackHost sharedPackHost,
                            Logger log) {
+        this.packHost = sharedPackHost;
         this.vanilla = vanilla;
         this.bind = bind;
         this.port = port;
@@ -142,7 +146,9 @@ public final class DashboardServer {
             String path = uri.getPath();
             String method = ex.getRequestMethod();
 
-            if (path.equals("/login") && method.equals("GET")) {
+            if (packHost != null && path.startsWith("/pack/")) {
+                packHost.serve(ex);
+            } else if (path.equals("/login") && method.equals("GET")) {
                 login(ex, uri.getRawQuery());
             } else if (path.startsWith("/api/")) {
                 api(ex, path, method);
