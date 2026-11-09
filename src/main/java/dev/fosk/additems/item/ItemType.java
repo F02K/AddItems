@@ -5,5 +5,6 @@ public enum ItemType {
     GENERIC,
     BLOCK,
     FOOD,
-    TOOL
+    TOOL,
+    ARMOR
 }

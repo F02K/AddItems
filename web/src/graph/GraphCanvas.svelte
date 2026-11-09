@@ -1,6 +1,6 @@
 <script>
   import { tick, untrack } from 'svelte';
-  import { SvelteFlow, Background, Controls, MiniMap, MarkerType, useSvelteFlow } from '@xyflow/svelte';
+  import { SvelteFlow, Background, Controls, MiniMap, MarkerType, useSvelteFlow, useUpdateNodeInternals } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
   import { api } from '../api.js';
   import Chips from '../Chips.svelte';
@@ -33,6 +33,7 @@
   ];
 
   const { fitView, getViewport } = useSvelteFlow();
+  const updateNodeInternals = useUpdateNodeInternals();
 
   let nodes = $state.raw([]);
   let edges = $state.raw([]);
@@ -173,9 +174,15 @@
     setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 60);
   }
 
-  function setDirection(value) {
+  async function setDirection(value) {
     direction = value;
-    relayout();
+    await relayout();
+    // The handles moved to other sides of the nodes. SvelteFlow only re-measures a node when its size changes, so without
+    // this the edges keep attaching to the old handle positions (e.g. coming in from below after TB -> LR).
+    await tick();
+    const remeasure = () => updateNodeInternals(untrack(() => nodes).map((n) => n.id));
+    remeasure();
+    setTimeout(remeasure, 120);
   }
 
   function onDragStop({ nodes: moved, targetNode }) {

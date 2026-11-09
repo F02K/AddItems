@@ -3,6 +3,9 @@ package dev.fosk.additems.web;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dev.fosk.additems.item.ArmorSetDefinition;
+import dev.fosk.additems.item.ArmorSets;
+import dev.fosk.additems.item.Ids;
 import dev.fosk.additems.item.Presets;
 import dev.fosk.additems.loot.LootRegistry;
 import dev.fosk.additems.loot.LootRule;
@@ -85,6 +88,7 @@ public final class DashboardServer {
     private final boolean secureCookie;
     private static final Pattern ICON_PATH = Pattern.compile("^/api/vanilla/icon/([a-z0-9_]{1,64})$");
     private static final Pattern LOOT_PATH = Pattern.compile("^/api/loot/([a-z0-9_]{1,48})$");
+    private static final Pattern SET_PATH = Pattern.compile("^/api/armorsets/([a-z0-9_]{1,36})(/texture)?$");
     private static final Pattern RECIPE_PATH =Pattern.compile("^/api/recipes/([a-z0-9_]{1,48})$");
 
     private final ItemRegistry registry;
@@ -216,6 +220,12 @@ public final class DashboardServer {
             else sendJson(ex, 200, ok());
         } else if (path.equals("/api/loot") && method.equals("GET")) {
             sendJson(ex, 200, lootList());
+        } else if (path.equals("/api/armorsets") && method.equals("GET")) {
+            sendJson(ex, 200, registry.armorSets().all());
+        } else if (path.equals("/api/recipes") && method.equals("POST")) {
+            createRecipe(ex);
+        } else if (path.equals("/api/loot") && method.equals("POST")) {
+            createLoot(ex);
         } else if (path.equals("/api/recipes") && method.equals("GET")) {
             sendJson(ex, 200, recipeList());
         } else if (path.equals("/api/pack") && method.equals("GET")) {
@@ -226,6 +236,11 @@ public final class DashboardServer {
             Matcher lm = LOOT_PATH.matcher(path);
             if (lm.matches()) {
                 lootRoute(ex, lm.group(1), method);
+                return;
+            }
+            Matcher sm = SET_PATH.matcher(path);
+            if (sm.matches()) {
+                setRoute(ex, sm.group(1), sm.group(2) != null, method);
                 return;
             }
             Matcher rm = RECIPE_PATH.matcher(path);
@@ -253,6 +268,40 @@ public final class DashboardServer {
         return out;
     }
 
+    /** POST /api/loot: like {@link #createRecipe}, the server picks a free id (suggestion: the body id, else the first target). */
+    private void createLoot(HttpExchange ex) throws Exception {
+        LootRule rule;
+        try {
+            rule = GSON.fromJson(new String(readBody(ex, 128 * 1024), StandardCharsets.UTF_8), LootRule.class);
+        } catch (RuntimeException e) {
+            sendJson(ex, 400, error("invalid JSON"));
+            return;
+        }
+        if (rule == null) {
+            sendJson(ex, 400, error("invalid JSON"));
+            return;
+        }
+        synchronized (loot) {
+            String first = rule.targets == null || rule.targets.isEmpty() ? "loot" : suggestionFrom(rule.targets.get(0), "loot");
+            String base = rule.id != null && !rule.id.isBlank() ? rule.id : first + "_drops";
+            rule.id = Ids.unique(base, 48, taken -> loot.get(taken) != null);
+            saveLoot(ex, rule);
+        }
+    }
+
+    private void saveLoot(HttpExchange ex, LootRule rule) throws Exception {
+        String problem = loot.save(rule);
+        if (problem != null) {
+            sendJson(ex, 400, error(problem));
+            return;
+        }
+        actions.contentChanged();
+        JsonObject o = GSON.toJsonTree(loot.get(rule.id)).getAsJsonObject();
+        String inactive = actions.lootProblem(rule.id);
+        if (inactive != null) o.addProperty("problem", inactive);
+        sendJson(ex, 200, o);
+    }
+
     private void lootRoute(HttpExchange ex, String id, String method) throws Exception {
         switch (method) {
             case "GET" -> {
@@ -272,16 +321,7 @@ public final class DashboardServer {
                     sendJson(ex, 400, error("id in body must match URL"));
                     return;
                 }
-                String problem = loot.save(rule);
-                if (problem != null) {
-                    sendJson(ex, 400, error(problem));
-                    return;
-                }
-                actions.contentChanged();
-                JsonObject o = GSON.toJsonTree(loot.get(id)).getAsJsonObject();
-                String inactive = actions.lootProblem(id);
-                if (inactive != null) o.addProperty("problem", inactive);
-                sendJson(ex, 200, o);
+                saveLoot(ex, rule);
             }
             case "DELETE" -> {
                 if (loot.delete(id)) {
@@ -289,6 +329,85 @@ public final class DashboardServer {
                     sendJson(ex, 200, ok());
                 } else {
                     sendJson(ex, 404, error("unknown loot rule"));
+                }
+            }
+            default -> sendJson(ex, 405, error("method not allowed"));
+        }
+    }
+
+    /** The dashboard marks the first save of a new item / set with this header, so an existing one is never overwritten. */
+    private static boolean isCreate(HttpExchange ex) {
+        return ex.getRequestHeaders().getFirst("X-Create") != null;
+    }
+
+    private void setRoute(HttpExchange ex, String id, boolean texture, String method) throws Exception {
+        ArmorSets sets = registry.armorSets();
+        if (texture) {
+            String slot = null;
+            String query = ex.getRequestURI().getRawQuery();
+            if (query != null) for (String part : query.split("&")) if (part.startsWith("slot=")) slot = part.substring(5);
+            if (slot == null || !ArmorSets.TEXTURE_SLOTS.contains(slot)) {
+                sendJson(ex, 400, error("unknown texture slot"));
+                return;
+            }
+            if (method.equals("GET")) {
+                byte[] png = sets.get(id) == null ? null : sets.readTexture(id, slot);
+                if (png == null) sendJson(ex, 404, error("no texture"));
+                else sendBytes(ex, 200, "image/png", png);
+            } else if (method.equals("PUT")) {
+                if (sets.get(id) == null) {
+                    sendJson(ex, 404, error("unknown armor set"));
+                    return;
+                }
+                byte[] data = readBody(ex, (int) ItemRegistry.MAX_TEXTURE_BYTES);
+                String problem = validatePng(data, true);
+                if (problem != null) {
+                    sendJson(ex, 400, error(problem));
+                    return;
+                }
+                sets.saveTexture(id, slot, data);
+                sendJson(ex, 200, ok());
+            } else {
+                sendJson(ex, 405, error("method not allowed"));
+            }
+            return;
+        }
+        switch (method) {
+            case "GET" -> {
+                ArmorSetDefinition set = sets.get(id);
+                if (set == null) sendJson(ex, 404, error("unknown armor set"));
+                else sendJson(ex, 200, set);
+            }
+            case "PUT" -> {
+                ArmorSetDefinition set;
+                try {
+                    set = GSON.fromJson(new String(readBody(ex, 64 * 1024), StandardCharsets.UTF_8), ArmorSetDefinition.class);
+                } catch (RuntimeException e) {
+                    sendJson(ex, 400, error("invalid JSON"));
+                    return;
+                }
+                if (set == null || !id.equals(set.id)) {
+                    sendJson(ex, 400, error("id in body must match URL"));
+                    return;
+                }
+                if (isCreate(ex) && sets.get(id) != null) {
+                    sendJson(ex, 409, error("an armor set with the id '" + id + "' already exists"));
+                    return;
+                }
+                String problem = sets.save(set);
+                if (problem != null) {
+                    sendJson(ex, 400, error(problem));
+                } else {
+                    actions.contentChanged(); // the pieces are items, recipes embed item stacks
+                    sendJson(ex, 200, sets.get(id));
+                }
+            }
+            case "DELETE" -> {
+                if (sets.delete(id)) {
+                    actions.contentChanged();
+                    sendJson(ex, 200, ok());
+                } else {
+                    sendJson(ex, 404, error("unknown armor set"));
                 }
             }
             default -> sendJson(ex, 405, error("method not allowed"));
@@ -304,6 +423,50 @@ public final class DashboardServer {
             out.add(o);
         }
         return out;
+    }
+
+    /**
+     * POST /api/recipes: creates a recipe and picks its id on the server (the id in the body is only a suggestion), so ids can
+     * never overwrite each other. Without a suggestion the id comes from the result item.
+     */
+    private void createRecipe(HttpExchange ex) throws Exception {
+        RecipeDefinition def;
+        try {
+            def = GSON.fromJson(new String(readBody(ex, 64 * 1024), StandardCharsets.UTF_8), RecipeDefinition.class);
+        } catch (RuntimeException e) {
+            sendJson(ex, 400, error("invalid JSON"));
+            return;
+        }
+        if (def == null) {
+            sendJson(ex, 400, error("invalid JSON"));
+            return;
+        }
+        synchronized (recipes) {
+            String base = def.id != null && !def.id.isBlank() ? def.id : suggestionFrom(def.result, "recipe");
+            def.id = Ids.unique(base, 48, taken -> recipes.get(taken) != null);
+            saveRecipe(ex, def);
+        }
+    }
+
+    private void saveRecipe(HttpExchange ex, RecipeDefinition def) throws Exception {
+        String problem = recipes.save(def);
+        if (problem != null) {
+            sendJson(ex, 400, error(problem));
+            return;
+        }
+        actions.contentChanged();
+        JsonObject o = GSON.toJsonTree(recipes.get(def.id)).getAsJsonObject();
+        String inactive = actions.recipeProblem(def.id);
+        if (inactive != null) o.addProperty("problem", inactive);
+        sendJson(ex, 200, o);
+    }
+
+    /** "additems:ruby_pickaxe" -> "ruby_pickaxe"; anything else (null, tags) -> the fallback. */
+    private static String suggestionFrom(String ref, String fallback) {
+        if (ref == null) return fallback;
+        int colon = ref.indexOf(':');
+        String name = colon >= 0 ? ref.substring(colon + 1) : ref;
+        return name.isBlank() ? fallback : name;
     }
 
     private void recipeRoute(HttpExchange ex, String id, String method) throws Exception {
@@ -326,16 +489,7 @@ public final class DashboardServer {
                     sendJson(ex, 400, error("id in body must match URL"));
                     return;
                 }
-                String problem = recipes.save(def);
-                if (problem != null) {
-                    sendJson(ex, 400, error(problem));
-                    return;
-                }
-                actions.contentChanged();
-                JsonObject o = GSON.toJsonTree(recipes.get(id)).getAsJsonObject();
-                String inactive = actions.recipeProblem(id);
-                if (inactive != null) o.addProperty("problem", inactive);
-                sendJson(ex, 200, o);
+                saveRecipe(ex, def);
             }
             case "DELETE" -> {
                 if (recipes.delete(id)) {
@@ -387,6 +541,10 @@ public final class DashboardServer {
                     sendJson(ex, 400, error("id in body must match URL"));
                     return;
                 }
+                if (isCreate(ex) && registry.get(id) != null) {
+                    sendJson(ex, 409, error("an item with the id '" + id + "' already exists"));
+                    return;
+                }
                 String problem = registry.save(def);
                 if (problem != null) {
                     sendJson(ex, 400, error(problem));
@@ -426,7 +584,7 @@ public final class DashboardServer {
             return;
         }
         byte[] data = readBody(ex, (int) ItemRegistry.MAX_TEXTURE_BYTES);
-        String problem = validatePng(data);
+        String problem = validatePng(data, ItemRegistry.WORN.equals(slot));
         if (problem != null) {
             sendJson(ex, 400, error(problem));
             return;
@@ -437,12 +595,18 @@ public final class DashboardServer {
 
     /** Only real, square PNGs of a sane size are accepted. Returns an error message or null. */
     static String validatePng(byte[] data) throws IOException {
+        return validatePng(data, false);
+    }
+
+    /** Worn armor textures are 64x32 style (twice as wide as high) or square; every other texture must be square. */
+    static String validatePng(byte[] data, boolean wornArmor) throws IOException {
         if (data.length < 8 || (data[0] & 0xFF) != 0x89 || data[1] != 'P' || data[2] != 'N' || data[3] != 'G') {
             return "file is not a PNG";
         }
         BufferedImage image = ImageIO.read(new ByteArrayInputStream(data));
         if (image == null) return "file is not a readable PNG";
-        if (image.getWidth() != image.getHeight()) return "texture must be square";
+        boolean ok = image.getWidth() == image.getHeight() || (wornArmor && image.getWidth() == 2 * image.getHeight());
+        if (!ok) return wornArmor ? "armor texture must be square or twice as wide as high (64x32)" : "texture must be square";
         if (image.getWidth() > 1024) return "texture larger than 1024x1024";
         return null;
     }

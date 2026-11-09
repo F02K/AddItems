@@ -55,7 +55,7 @@ Values may be an int or `[major, minor]`.
 4. `custom_model_data` also exists (floats, flags, strings, colors) and can drive `condition` / `select` /
    `range_dispatch` models - useful later for variants of one item.
 
-## Armor / equipment (planned, not in MVP)
+## Armor / equipment (implemented 2026-11-09, not yet seen in a client)
 
 `equippable` component with `asset_id` -> `assets/<ns>/equipment/<id>.json` with `layers` (`humanoid`,
 `humanoid_leggings`, `humanoid_baby` (26.1+), `wings`, `wolf_body`, `horse_body`, ...); texture `ns:path` ->
@@ -65,7 +65,7 @@ Values may be an int or `[major, minor]`.
 ## Data components used by the plugin
 
 `item_model`, `item_name`, `lore`, `max_stack_size`, `max_damage`, `damage`, `food`, `consumable`, `tool`,
-`attribute_modifiers`. Relevant later: `equippable`, `enchantable`, `custom_data`, `custom_model_data`,
+`attribute_modifiers`, `equippable`, `enchantable`. Relevant later: `custom_data`, `custom_model_data`,
 `block_state`, `glider`. In 26.4 snapshots `consumable.sound` and `equippable.equip_sound` change shape
 (*upcoming, unverified for release*).
 
@@ -127,6 +127,8 @@ The base item of a tool decides right-click behaviour (axe strips, hoe tills, sh
   third-party issue, not Mojang docs): any block model can use cutout or translucent textures, the render pass comes from the
   contents of the sprite, `force_translucent` forces the translucent pass.
 - Light and occlusion are properties of the block, not of the model: a note block always blocks light and culls neighbours.
+  So custom blocks cannot be see-through (floor visible through glass-like blocks is impossible with a note block carrier);
+  transparent blocks were dropped on 2026-11-09.
 - Paper: `Registry.SOUNDS` lists every sound event (`Registry.SOUNDS.getKey(sound)`), 1991 on 26.3;
   `world.playSound(location, "block.stone.place", ...)` takes the id without `minecraft:`.
 

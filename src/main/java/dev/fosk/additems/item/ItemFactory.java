@@ -3,6 +3,7 @@ package dev.fosk.additems.item;
 import io.papermc.paper.datacomponent.DataComponentTypes;
 import io.papermc.paper.datacomponent.item.Consumable;
 import io.papermc.paper.datacomponent.item.Enchantable;
+import io.papermc.paper.datacomponent.item.Equippable;
 import io.papermc.paper.datacomponent.item.FoodProperties;
 import io.papermc.paper.datacomponent.item.ItemAttributeModifiers;
 import io.papermc.paper.datacomponent.item.ItemLore;
@@ -23,6 +24,7 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.block.BlockType;
 import org.bukkit.inventory.EquipmentSlotGroup;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
@@ -56,6 +58,8 @@ public final class ItemFactory {
         // Placeable custom blocks are note blocks in the world, so their item is a note block too (the placement
         // then goes through the normal block place event); the look comes from item_model.
         if (def.type == ItemType.BLOCK && def.block.placeable) material = Material.NOTE_BLOCK;
+        // Armor is a vanilla piece of the same slot; the equippable component below replaces its vanilla look and stats.
+        if (def.type == ItemType.ARMOR) material = Material.matchMaterial(Presets.armorBaseMaterial(def.armor.slot));
         ItemStack stack = new ItemStack(material, Math.max(1, amount));
 
         stack.editPersistentDataContainer(pdc -> pdc.set(idKey, PersistentDataType.STRING, def.id));
@@ -80,6 +84,7 @@ public final class ItemFactory {
         switch (def.type) {
             case FOOD -> applyFood(stack, def.food);
             case TOOL -> applyTool(stack, def);
+            case ARMOR -> applyArmor(stack, def);
             default -> { /* GENERIC and BLOCK need no extra components yet */ }
         }
         return stack;
@@ -94,6 +99,45 @@ public final class ItemFactory {
         stack.setData(DataComponentTypes.CONSUMABLE, Consumable.consumable()
                 .consumeSeconds(food.eatSeconds)
                 .build());
+    }
+
+    private void applyArmor(ItemStack stack, ItemDefinition def) {
+        ItemDefinition.ArmorProps armor = def.armor;
+        stack.setData(DataComponentTypes.MAX_STACK_SIZE, 1);
+        stack.setData(DataComponentTypes.MAX_DAMAGE, armor.durability);
+        stack.setData(DataComponentTypes.DAMAGE, 0);
+
+        EquipmentSlot slot = EquipmentSlot.valueOf(armor.slot.equipmentSlot());
+        Equippable.Builder equippable = Equippable.equippable(slot);
+        // Without a worn texture the piece keeps the vanilla iron look on the body.
+        // A piece of a set shares the set's equipment asset (named after the set), a single piece has its own.
+        if (def.hasWornTexture) equippable.assetId(Key.key(namespace, armor.set.isEmpty() ? def.id : armor.set));
+        if (armor.equipSound != null && !armor.equipSound.isBlank()) equippable.equipSound(Key.key(armor.equipSound));
+        stack.setData(DataComponentTypes.EQUIPPABLE, equippable.build());
+
+        // Vanilla's own modifier ids ("armor.helmet" ...), so the tooltip reads like a vanilla piece.
+        EquipmentSlotGroup group = switch (armor.slot) {
+            case HELMET -> EquipmentSlotGroup.HEAD;
+            case CHESTPLATE -> EquipmentSlotGroup.CHEST;
+            case LEGGINGS -> EquipmentSlotGroup.LEGS;
+            case BOOTS -> EquipmentSlotGroup.FEET;
+        };
+        NamespacedKey modifierKey = NamespacedKey.minecraft("armor." + armor.slot.name().toLowerCase());
+        ItemAttributeModifiers.Builder attributes = ItemAttributeModifiers.itemAttributes()
+                .addModifier(Attribute.ARMOR, new AttributeModifier(modifierKey, armor.defense,
+                        AttributeModifier.Operation.ADD_NUMBER, group));
+        if (armor.toughness > 0) {
+            attributes.addModifier(Attribute.ARMOR_TOUGHNESS, new AttributeModifier(modifierKey, armor.toughness,
+                    AttributeModifier.Operation.ADD_NUMBER, group));
+        }
+        if (armor.knockbackResistance > 0) {
+            attributes.addModifier(Attribute.KNOCKBACK_RESISTANCE, new AttributeModifier(modifierKey,
+                    armor.knockbackResistance, AttributeModifier.Operation.ADD_NUMBER, group));
+        }
+        stack.setData(DataComponentTypes.ATTRIBUTE_MODIFIERS, attributes.build());
+        if (armor.enchantability > 0) {
+            stack.setData(DataComponentTypes.ENCHANTABLE, Enchantable.enchantable(armor.enchantability));
+        }
     }
 
     private void applyTool(ItemStack stack, ItemDefinition def) {

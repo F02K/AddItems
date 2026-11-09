@@ -126,17 +126,13 @@ web/                       Svelte 5 + Vite dashboard; built to build/web-dist, b
   does. Verified on a real 26.3 server: with the option all instrument/note/powered checks pass after placing blocks above,
   below and redstone next to a custom block, without it the instrument changes. `CustomBlocks.checkServerSetup` reads the
   file at startup, logs a warning and the dashboard shows a notice in the block card.
-- **Rendering (`block.rendering`)**: `SOLID` (cube_all / cube_bottom_top, vanilla culling), `CUTOUT` (leaves, grates: own model
-  `parent block/block` with one cube **without any `cullface`**, plus `<texture>.png.mcmeta` `{"texture":{"mipmap_strategy":
-  "dark_cutout"}}` like vanilla leaves) and `TRANSLUCENT` (glass-like: texture entry `{"sprite": ..., "force_translucent": true}`
-  plus mipmap strategy `mean`, like vanilla glass). Why: since 26.1 the render pass follows the transparency of the texture, so
-  transparent pixels are cut out on their own, but the cube models cull faces next to opaque blocks and a custom block is an
-  opaque note block, so the faces between neighbouring leaf blocks disappeared and you looked through the holes into nothing.
-  Verified against the real 26.3 pack files (see minecraft-versions.md), not yet seen in a client.
-- **What stays "solid" for every custom block** (note block properties, cannot be changed from a plugin): it blocks light and
-  skylight (dark under a canopy), neighbouring vanilla faces are culled against it, mobs can spawn on top, it suffocates. A truly
-  non-opaque block needs another carrier: chorus plant (Paper has `disable-chorus-plant-updates`; light passes, but its hitbox is a
-  thin cross and only 63 states) or item displays plus a barrier. Not built yet.
+- **No transparent blocks (decision 2026-11-09):** every custom block is an opaque note block for the client, which culls the
+  neighbouring faces next to it (you looked through glass/leaves into the void under the block). A resource pack cannot change
+  that. A `rendering` mode (cutout / translucent) existed briefly and was removed. If it comes back, the carrier must not be a
+  note block: item displays + barrier + interaction entity (like furniture) are the idea; reserving vanilla leaves/glass states
+  was rejected because it would block vanilla blocks. Details: docs/roadmap.md.
+- **Every custom block stays "solid"** (note block properties, cannot be changed from a plugin): it blocks light and
+  skylight, neighbouring vanilla faces are culled against it, mobs can spawn on top, it suffocates.
 - **Block sounds**: `place` / `break` sound ids are checked against Paper's sound registry (`SoundCatalog`, ~1990 ids, listed
   without `minecraft:`); `ItemRegistry` trims them, strips `minecraft:` and rejects unknown ones (`unknown sound '...'`); a
   hand-written file with an unknown sound still loads, with a warning. The dashboard (`SoundInput.svelte`,
@@ -148,6 +144,62 @@ web/                       Svelte 5 + Vite dashboard; built to build/web-dist, b
 - Not supported yet: light emission, custom step/hit sounds (still wooden), non-cube shapes (planned via item displays), creative
   pick-block, mining speed per tool kind (speed follows the note block's normal tool behaviour, only scaled by hardness).
 - Untested without a player: placing from the item, mining with the speed modifier, breaking drops, explosions.
+
+## Dashboard layout (2026-11-09)
+
+Two tabs only: **Graph** (overview, drag to connect) and **Items**. A saved item has its own tabs **Item | Recipes | Drops**
+(`App.svelte`; the item form stays mounted while another tab is open so unsaved edits survive):
+
+- `ItemRecipes.svelte`: the recipes that make this item, edited inline in the normal `RecipeEditor` with the **result locked to
+  this item** (`lockResult` / `Slot locked`); "+ New recipe" starts a shaped recipe with this item as result; recipes that use the
+  item as an ingredient are listed read-only.
+- `ItemDrops.svelte`: rules that drop the item (mobs, blocks, chests) and, for a placeable block, rules fired by breaking it,
+  edited inline in `LootEditor`.
+- Recipes and rules that involve no custom item are only reachable through the graph: its arrow buttons open them in
+  `RuleDialog` over the graph. The old Recipes and Drops tabs were removed.
+
+## Ids (2026-11-09)
+
+- **Recipes and drop rules never get a hand-typed id.** The editors have no id field. New ones are created with
+  `POST /api/recipes` / `POST /api/loot`; the body id is only a suggestion (item id, `<item>_drops`, `<item>_break`, graph:
+  `<to>_from_<from>`) and the server returns a free one (`Ids.unique`: base, base_2, base_3 ..., max 48 characters) under a lock, so
+  two creations can never overwrite each other. `PUT /api/<kind>/<id>` is only for editing an existing entry.
+- **Items and armor sets** keep a typed id, but it is filled in from the display name (`idFromName`) until typed by hand, and the
+  first save of a new one sends the header `X-Create` (`api.saveItem(def, isNew)`): the server answers 409 instead of overwriting.
+  An armor set also refuses an id that an item (other than its own pieces) already uses.
+- Armor set pieces are `<set>_<slot>` (or a linked existing item); the set id is limited to 36 characters so that fits.
+- Not done: deleting an item does not delete the recipes whose result it was (they show up as not active).
+
+## Armor (`ItemType.ARMOR`)
+
+- `ItemDefinition.armor`: slot (helmet / chestplate / leggings / boots), tier (informational), defense, toughness,
+  knockback resistance, durability, enchantability, equip sound. Presets in `Presets.ARMOR_TIERS` (wiki values, 2026-11-09;
+  chainmail defense 2/5/4/1 is from memory, the wiki page fetch did not list it).
+- `ItemFactory.applyArmor`: base item is `IRON_<slot>`; sets `equippable` (slot, `asset_id` = `additems:<id>` only when a worn
+  texture exists, equip sound), `max_damage`, `enchantable`, and `attribute_modifiers` for armor / toughness / knockback
+  resistance with vanilla ids `minecraft:armor.<slot>` and the matching equipment slot group.
+- Textures: slot `main` = inventory icon (`textures/item/<id>.png`), slot `worn` = body texture. `PackFormat26_3.armorEquipmentFiles`
+  writes `assets/<ns>/equipment/<id>.json` (`layers.humanoid` or `humanoid_leggings` for leggings) and
+  `textures/entity/equipment/<layer>/<id>.png`. Worn textures may be 2:1 (64x32) or square (`DashboardServer.validatePng`).
+  `hasWornTexture` is recomputed by the registry like `hasTexture`.
+- **Armor sets (2026-11-09)** (`ArmorSetDefinition`, `ArmorSets`, owned by `ItemRegistry#armorSets`; files in
+  `plugins/AddItems/armorsets/<id>.json` plus `<id>.humanoid.png` / `<id>.leggings.png`): a set has 1-4 pieces (key = slot),
+  shared tier values (toughness, knockback resistance, enchantability, equip sound) and per-piece defense / durability.
+  Saving a set writes one normal item per piece (`<set>_<slot>`, `armor.set` = set id, type ARMOR) and deletes pieces that left
+  the set; existing pieces keep lore, stack size and anything the set does not own. Deleting a set deletes its pieces; deleting
+  the last piece item deletes the set. The pack gets ONE equipment asset named after the set (`equipment/<set>.json`, layers
+  `humanoid` and/or `humanoid_leggings`, both pointing to `<ns>:<set>`); the pieces' `equippable.asset_id` is the set id,
+  `hasWornTexture` of a piece = the set has the layer for its slot. A single armor item without a set still uses its own `worn`
+  texture and asset. Lock order: set operations lock the `ItemRegistry` instance (same lock as its synchronized methods).
+  API: `/api/armorsets`, `/api/armorsets/<id>`, `/api/armorsets/<id>/texture?slot=humanoid|leggings`. In the dashboard the set is edited inside the
+  Items tab (`ArmorSetPanel`, `ArmorSetEditor`) and is a **toggle "Armor set"** in the armor section of an item: ticking it on a new
+  item starts a set (all four pieces, values of the item); ticking it on a saved single armor item turns it into a set whose piece
+  is that very item (`Piece.item` = its id, so recipes and drops keep working, its worn texture becomes the shared layer); unticking
+  it on a piece and saving detaches the piece again (`ItemRegistry.save` -> `ArmorSets.pieceDeleted` + `detachWornTexture`, it keeps
+  a copy of the shared texture). A piece shows its set and locks the armor values; the set editor links to each piece.
+  `Piece.item` empty means the default id `<set>_<slot>`; an explicit item may only adopt a single armor item without a set.
+- Not done: set bonuses (effects when several pieces are worn), elytra /
+  `glider`, trim overrides, `humanoid_baby` and animal layers, in-game verification (compiled and pack-tested only).
 
 ## Drops and loot (`loot/`)
 

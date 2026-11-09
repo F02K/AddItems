@@ -121,69 +121,6 @@ class PackBuilderTest {
         assertTrue(state.contains("\"instrument=harp,note=2,powered=false\":{\"model\":\"minecraft:block/note_block\"}"));
     }
 
-    private Path buildBlockPack(String mode, String rendering) throws Exception {
-        ItemRegistry registry = new ItemRegistry(dir, Logger.getAnonymousLogger());
-        registry.load();
-        registry.setStatePool(VARIANTS.subList(1, 3));
-        ItemDefinition def = new ItemDefinition();
-        def.id = "leaves";
-        def.type = ItemType.BLOCK;
-        def.block.placeable = true;
-        def.block.textureMode = mode;
-        def.block.rendering = rendering;
-        assertNull(registry.save(def));
-        registry.saveTexture("leaves", new byte[]{1, 2, 3});
-        if (mode.equals("SIDES")) {
-            registry.saveTexture("leaves", "top", new byte[]{9});
-            registry.saveTexture("leaves", "bottom", new byte[]{8});
-            registry.saveTexture("leaves", "side", new byte[]{7});
-        }
-        return new PackBuilder(registry, new PackFormat26_3(), "additems", VARIANTS).build(dir.resolve("out/pack.zip")).file();
-    }
-
-    @Test
-    void cutoutBlockUsesAModelWithoutFaceCullingAndCutoutMipmaps() throws Exception {
-        Path zip = buildBlockPack("ALL", "CUTOUT");
-        String model = read(zip, "assets/additems/models/block/leaves.json");
-        assertTrue(model.contains("\"parent\":\"minecraft:block/block\""), "keeps vanilla display transforms");
-        assertTrue(model.contains("\"elements\""));
-        assertFalse(model.contains("cullface"), "faces must never be culled, or neighbouring blocks hide each other's faces");
-        assertTrue(model.contains("\"texture\":\"#all\""));
-        assertTrue(model.contains("\"all\":\"additems:block/leaves\""));
-        assertEquals("{\"texture\":{\"mipmap_strategy\":\"dark_cutout\"}}\n",
-                read(zip, "assets/additems/textures/block/leaves.png.mcmeta"));
-        assertTrue(read(zip, "assets/additems/items/leaves.json").contains("additems:block/leaves"));
-    }
-
-    @Test
-    void cutoutSidesBlockMapsTopBottomAndSideFaces() throws Exception {
-        Path zip = buildBlockPack("SIDES", "CUTOUT");
-        String model = read(zip, "assets/additems/models/block/leaves.json");
-        assertTrue(model.contains("\"up\":{\"uv\":[0,0,16,16],\"texture\":\"#top\"}"));
-        assertTrue(model.contains("\"down\":{\"uv\":[0,0,16,16],\"texture\":\"#bottom\"}"));
-        assertTrue(model.contains("\"north\":{\"uv\":[0,0,16,16],\"texture\":\"#side\"}"));
-        assertFalse(model.contains("cullface"));
-        for (String file : new String[]{"leaves_top", "leaves_bottom", "leaves_side"}) {
-            assertNotNull(read(zip, "assets/additems/textures/block/" + file + ".png.mcmeta"), file);
-        }
-    }
-
-    @Test
-    void translucentBlockMarksItsTextureAsForceTranslucent() throws Exception {
-        Path zip = buildBlockPack("ALL", "TRANSLUCENT");
-        String model = read(zip, "assets/additems/models/block/leaves.json");
-        assertTrue(model.contains("\"parent\":\"minecraft:block/cube_all\""), "glass keeps culling between glass blocks");
-        assertTrue(model.contains("\"all\":{\"force_translucent\":true,\"sprite\":\"additems:block/leaves\"}"));
-        assertTrue(read(zip, "assets/additems/textures/block/leaves.png.mcmeta").contains("\"mean\""));
-    }
-
-    @Test
-    void solidBlockNeedsNoTextureMetadata() throws Exception {
-        Path zip = buildBlockPack("ALL", "SOLID");
-        assertNull(read(zip, "assets/additems/textures/block/leaves.png.mcmeta"));
-        assertTrue(read(zip, "assets/additems/models/block/leaves.json").contains("cube_all"));
-    }
-
     @Test
     void sidesModeFallsBackToTheMainTextureForMissingFaces() throws Exception {
         ItemRegistry registry = blockRegistry("SIDES", true);
@@ -216,5 +153,49 @@ class PackBuilderTest {
         assertTrue(json.contains("\"min_format\":[97,1]"));
         assertTrue(json.contains("\"max_format\":[97,1]"));
         assertTrue(!json.contains("\"pack_format\""));
+    }
+
+    private Path buildArmorPack(ItemDefinition.ArmorSlot slot, boolean icon, boolean worn) throws Exception {
+        ItemRegistry registry = new ItemRegistry(dir, Logger.getAnonymousLogger());
+        registry.load();
+        ItemDefinition def = new ItemDefinition();
+        def.id = "ruby_armor";
+        def.type = ItemType.ARMOR;
+        def.armor.slot = slot;
+        assertNull(registry.save(def));
+        if (icon) registry.saveTexture("ruby_armor", new byte[]{1, 2, 3});
+        if (worn) registry.saveTexture("ruby_armor", "worn", new byte[]{4, 5, 6});
+        return new PackBuilder(registry, new PackFormat26_3(), "additems").build(dir.resolve("out/pack.zip")).file();
+    }
+
+    @Test
+    void armorWithWornTextureGetsEquipmentAssetAndHumanoidLayer() throws Exception {
+        Path zip = buildArmorPack(ItemDefinition.ArmorSlot.CHESTPLATE, true, true);
+        assertEquals("{\"layers\":{\"humanoid\":[{\"texture\":\"additems:ruby_armor\"}]}}\n",
+                read(zip, "assets/additems/equipment/ruby_armor.json"));
+        assertTrue(entries(zip).contains("assets/additems/textures/entity/equipment/humanoid/ruby_armor.png"));
+        assertTrue(entries(zip).contains("assets/additems/textures/item/ruby_armor.png"));
+        assertTrue(read(zip, "assets/additems/models/item/ruby_armor.json").contains("minecraft:item/generated"));
+    }
+
+    @Test
+    void leggingsUseTheLeggingsLayer() throws Exception {
+        Path zip = buildArmorPack(ItemDefinition.ArmorSlot.LEGGINGS, true, true);
+        assertTrue(read(zip, "assets/additems/equipment/ruby_armor.json").contains("humanoid_leggings"));
+        assertTrue(entries(zip).contains("assets/additems/textures/entity/equipment/humanoid_leggings/ruby_armor.png"));
+    }
+
+    @Test
+    void armorWithoutWornTextureHasNoEquipmentAsset() throws Exception {
+        Path zip = buildArmorPack(ItemDefinition.ArmorSlot.HELMET, true, false);
+        assertFalse(entries(zip).stream().anyMatch(n -> n.contains("/equipment/")));
+        assertTrue(entries(zip).contains("assets/additems/items/ruby_armor.json"));
+    }
+
+    @Test
+    void wornTextureAloneStillProducesTheEquipmentAsset() throws Exception {
+        Path zip = buildArmorPack(ItemDefinition.ArmorSlot.BOOTS, false, true);
+        assertTrue(entries(zip).contains("assets/additems/equipment/ruby_armor.json"));
+        assertFalse(entries(zip).contains("assets/additems/items/ruby_armor.json"));
     }
 }

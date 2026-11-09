@@ -46,6 +46,27 @@ public final class Presets {
         return out;
     }
 
+    /**
+     * Armor material: defense per piece in order helmet, chestplate, leggings, boots; durability per piece in the same
+     * order. Source: minecraft.wiki Armor and Armor materials, checked 2026-11-09 for 26.3.
+     */
+    public record ArmorTier(String id, String label, double[] defense, int[] durability, double toughness,
+                            double knockbackResistance, int enchantability, String equipSound) {}
+
+    public static final List<ArmorTier> ARMOR_TIERS = List.of(
+            new ArmorTier("LEATHER", "Leather", new double[]{1, 3, 2, 1}, new int[]{55, 80, 75, 65}, 0, 0, 15, "item.armor.equip_leather"),
+            new ArmorTier("COPPER", "Copper", new double[]{2, 4, 5, 1}, new int[]{121, 176, 165, 143}, 0, 0, 8, "item.armor.equip_copper"),
+            new ArmorTier("CHAINMAIL", "Chainmail", new double[]{2, 5, 4, 1}, new int[]{165, 240, 225, 195}, 0, 0, 12, "item.armor.equip_chain"),
+            new ArmorTier("IRON", "Iron", new double[]{2, 6, 5, 2}, new int[]{165, 240, 225, 195}, 0, 0, 9, "item.armor.equip_iron"),
+            new ArmorTier("GOLDEN", "Golden", new double[]{2, 5, 3, 1}, new int[]{77, 112, 105, 91}, 0, 0, 25, "item.armor.equip_gold"),
+            new ArmorTier("DIAMOND", "Diamond", new double[]{3, 8, 6, 3}, new int[]{363, 528, 495, 429}, 2, 0, 10, "item.armor.equip_diamond"),
+            new ArmorTier("NETHERITE", "Netherite", new double[]{3, 8, 6, 3}, new int[]{407, 592, 555, 481}, 3, 0.1, 15, "item.armor.equip_netherite"));
+
+    /** Vanilla base item used for an armor piece (decides nothing but the fallback look and the repair material). */
+    public static String armorBaseMaterial(ItemDefinition.ArmorSlot slot) {
+        return "IRON_" + slot.name();
+    }
+
     public record Food(String id, String label, String material, int nutrition, float saturation, float eatSeconds) {}
 
     public static final List<Food> FOODS = List.of(
@@ -97,6 +118,28 @@ public final class Presets {
             toolStats.add(kind.name(), perTier);
         }
         root.add("toolStats", toolStats);
+
+        JsonArray armorTiers = new JsonArray();
+        for (ArmorTier t : ARMOR_TIERS) {
+            JsonObject o = new JsonObject();
+            o.addProperty("id", t.id());
+            o.addProperty("label", t.label());
+            JsonObject perSlot = new JsonObject();
+            ItemDefinition.ArmorSlot[] slots = ItemDefinition.ArmorSlot.values();
+            for (int i = 0; i < slots.length; i++) {
+                JsonObject s = new JsonObject();
+                s.addProperty("defense", t.defense()[i]);
+                s.addProperty("durability", t.durability()[i]);
+                perSlot.add(slots[i].name(), s);
+            }
+            o.add("slots", perSlot);
+            o.addProperty("toughness", t.toughness());
+            o.addProperty("knockbackResistance", t.knockbackResistance());
+            o.addProperty("enchantability", t.enchantability());
+            o.addProperty("equipSound", t.equipSound());
+            armorTiers.add(o);
+        }
+        root.add("armorTiers", armorTiers);
 
         JsonArray foods = new JsonArray();
         for (Food f : FOODS) {

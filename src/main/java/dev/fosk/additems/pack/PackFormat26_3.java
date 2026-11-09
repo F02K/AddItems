@@ -58,6 +58,7 @@ public final class PackFormat26_3 implements PackFormat {
         if (item.type == ItemType.BLOCK && item.block.placeable) return placeableBlockFiles(ns, item, textures);
 
         Map<String, byte[]> files = new LinkedHashMap<>();
+        if (item.type == ItemType.ARMOR && item.armor.set.isEmpty()) files.putAll(armorEquipmentFiles(ns, item, textures.get("worn")));
         byte[] main = textures.get("main");
         if (!item.hasTexture || main == null) return files;
 
@@ -88,19 +89,53 @@ public final class PackFormat26_3 implements PackFormat {
         return files;
     }
 
+    @Override
+    public Map<String, byte[]> armorSetFiles(String ns, dev.fosk.additems.item.ArmorSetDefinition set, Map<String, byte[]> textures) {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        JsonObject layers = new JsonObject();
+        for (var layer : List.of(Map.entry("humanoid", "humanoid"), Map.entry("leggings", "humanoid_leggings"))) {
+            byte[] texture = textures.get(layer.getKey());
+            if (texture == null) continue;
+            JsonObject entry = new JsonObject();
+            entry.addProperty("texture", ns + ":" + set.id);
+            JsonArray entries = new JsonArray();
+            entries.add(entry);
+            layers.add(layer.getValue(), entries);
+            files.put("assets/" + ns + "/textures/entity/equipment/" + layer.getValue() + "/" + set.id + ".png", texture);
+        }
+        if (layers.size() == 0) return files;
+        JsonObject root = new JsonObject();
+        root.add("layers", layers);
+        files.put("assets/" + ns + "/equipment/" + set.id + ".json", json(root));
+        return files;
+    }
+
     /**
-     * Model, textures and item definition of a placeable block; the held item shows the same block model.
-     *
-     * <p>Rendering (verified against the 26.3 client assets, see docs/minecraft-versions.md): since 26.1 the pass a block is
-     * drawn in comes from the transparency of its texture, so a texture with transparent pixels is cut out automatically.
-     * The vanilla cube models cull faces next to opaque blocks. A custom block is an opaque note block, so for see-through
-     * blocks (CUTOUT) the model must not use cullface, otherwise the faces between neighbouring blocks vanish and you look
-     * through the holes into nothing. Glass-like blocks (TRANSLUCENT) mark their texture with force_translucent.
+     * The equipment asset of an armor piece: assets/&lt;ns&gt;/equipment/&lt;id&gt;.json names the layer ("humanoid" for
+     * helmet, chestplate and boots, "humanoid_leggings" for leggings) and the texture lives in
+     * textures/entity/equipment/&lt;layer&gt;/&lt;id&gt;.png. The item's equippable component points to it with asset_id.
      */
+    private Map<String, byte[]> armorEquipmentFiles(String ns, ItemDefinition item, byte[] worn) {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        if (worn == null) return files;
+        String layer = item.armor.slot == ItemDefinition.ArmorSlot.LEGGINGS ? "humanoid_leggings" : "humanoid";
+        JsonObject entry = new JsonObject();
+        entry.addProperty("texture", ns + ":" + item.id);
+        JsonArray entries = new JsonArray();
+        entries.add(entry);
+        JsonObject layers = new JsonObject();
+        layers.add(layer, entries);
+        JsonObject root = new JsonObject();
+        root.add("layers", layers);
+        files.put("assets/" + ns + "/equipment/" + item.id + ".json", json(root));
+        files.put("assets/" + ns + "/textures/entity/equipment/" + layer + "/" + item.id + ".png", worn);
+        return files;
+    }
+
+    /** Model, textures and item definition of a placeable block; the held item shows the same block model. */
     private Map<String, byte[]> placeableBlockFiles(String ns, ItemDefinition item, Map<String, byte[]> textures) {
         Map<String, byte[]> files = new LinkedHashMap<>();
         boolean sides = "SIDES".equals(item.block.textureMode);
-        String rendering = item.block.rendering == null ? "SOLID" : item.block.rendering;
         byte[] main = textures.get("main");
 
         // slot ("all" or top / bottom / side) -> texture id, and the png files behind them
@@ -120,72 +155,14 @@ public final class PackFormat26_3 implements PackFormat {
             files.put("assets/" + ns + "/textures/block/" + item.id + ".png", main);
         }
 
-        // texture metadata: how mipmaps are built for cut-out / glass textures (same values vanilla leaves and glass use)
-        if (!rendering.equals("SOLID")) {
-            String strategy = rendering.equals("CUTOUT") ? "dark_cutout" : "mean";
-            for (String png : new ArrayList<>(files.keySet())) files.put(png + ".mcmeta", textureMeta(strategy));
-        }
-
         JsonObject model = new JsonObject();
+        model.addProperty("parent", sides ? "minecraft:block/cube_bottom_top" : "minecraft:block/cube_all");
         JsonObject textureMap = new JsonObject();
-        if (rendering.equals("CUTOUT")) {
-            model.addProperty("parent", "minecraft:block/block"); // keeps the vanilla display transforms for the held item
-            refs.forEach(textureMap::addProperty);
-            textureMap.addProperty("particle", sides ? "#side" : "#all");
-            model.add("textures", textureMap);
-            model.add("elements", cubeWithoutCulling(sides));
-        } else {
-            model.addProperty("parent", sides ? "minecraft:block/cube_bottom_top" : "minecraft:block/cube_all");
-            for (var entry : refs.entrySet()) {
-                if (rendering.equals("TRANSLUCENT")) {
-                    JsonObject sprite = new JsonObject();
-                    sprite.addProperty("force_translucent", true);
-                    sprite.addProperty("sprite", entry.getValue());
-                    textureMap.add(entry.getKey(), sprite);
-                } else {
-                    textureMap.addProperty(entry.getKey(), entry.getValue());
-                }
-            }
-            model.add("textures", textureMap);
-        }
+        refs.forEach(textureMap::addProperty);
+        model.add("textures", textureMap);
         files.put("assets/" + ns + "/models/block/" + item.id + ".json", json(model));
         files.put("assets/" + ns + "/items/" + item.id + ".json", itemDefinition(ns + ":block/" + item.id));
         return files;
-    }
-
-    /** A full cube whose faces are never culled (no "cullface" key), referencing #all or #top / #bottom / #side. */
-    private static JsonArray cubeWithoutCulling(boolean sides) {
-        JsonObject faces = new JsonObject();
-        for (String direction : List.of("down", "up", "north", "south", "west", "east")) {
-            JsonObject face = new JsonObject();
-            JsonArray uv = new JsonArray();
-            for (int v : new int[]{0, 0, 16, 16}) uv.add(v);
-            face.add("uv", uv);
-            String slot = !sides ? "#all" : direction.equals("up") ? "#top" : direction.equals("down") ? "#bottom" : "#side";
-            face.addProperty("texture", slot);
-            faces.add(direction, face);
-        }
-        JsonObject element = new JsonObject();
-        JsonArray from = new JsonArray();
-        JsonArray to = new JsonArray();
-        for (int i = 0; i < 3; i++) {
-            from.add(0);
-            to.add(16);
-        }
-        element.add("from", from);
-        element.add("to", to);
-        element.add("faces", faces);
-        JsonArray elements = new JsonArray();
-        elements.add(element);
-        return elements;
-    }
-
-    private static byte[] textureMeta(String mipmapStrategy) {
-        JsonObject texture = new JsonObject();
-        texture.addProperty("mipmap_strategy", mipmapStrategy);
-        JsonObject root = new JsonObject();
-        root.add("texture", texture);
-        return json(root);
     }
 
     @Override

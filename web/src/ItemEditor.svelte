@@ -5,8 +5,9 @@
   import VanillaIcon from './VanillaIcon.svelte';
   import SoundInput from './SoundInput.svelte';
   import { soundFamilies, familyOf } from './lib/sounds.js';
+  import { idFromName } from './lib/blank.js';
 
-  let { initial, isNew, meta, textureUrl, slotUrls = {}, status, statusError, onsave, ondelete } = $props();
+  let { initial, isNew, meta, existingIds = [], textureUrl, slotUrls = {}, status, statusError, onsave, ondelete, onopenset = null, onarmorset = null } = $props();
 
   // The editor owns the form state; App re-creates it (via {#key}) whenever another item is selected.
   // svelte-ignore state_referenced_locally
@@ -23,7 +24,8 @@
     GENERIC: { label: 'Item', hint: 'Plain item (material, trinket, ...)' },
     FOOD: { label: 'Food', hint: 'Can be eaten' },
     TOOL: { label: 'Tool / weapon', hint: 'Sword, pickaxe, axe, shovel, hoe' },
-    BLOCK: { label: 'Block', hint: 'Block-shaped item' }
+    BLOCK: { label: 'Block', hint: 'Block-shaped item' },
+    ARMOR: { label: 'Armor', hint: 'Helmet, chestplate, leggings, boots' }
   };
   const typeOptions = $derived(meta.types.map((t) => ({ value: t, label: TYPE_INFO[t]?.label ?? t, hint: TYPE_INFO[t]?.hint })));
   const kindOptions = $derived(meta.toolKinds.map((k) => ({ value: k, label: k[0] + k.slice(1).toLowerCase() })));
@@ -40,7 +42,7 @@
       : meta.materials
   );
 
-  const DEFAULT_BASE = { GENERIC: 'PAPER', BLOCK: 'STONE', FOOD: 'BREAD', TOOL: 'IRON_PICKAXE' };
+  const DEFAULT_BASE = { GENERIC: 'PAPER', BLOCK: 'STONE', FOOD: 'BREAD', TOOL: 'IRON_PICKAXE', ARMOR: 'IRON_CHESTPLATE' };
   const BASE_HINT = {
     TOOL: 'Decides the right-click behaviour (axe strips logs, hoe tills, shovel makes paths) and the look without a texture.',
     FOOD: 'Vanilla look until a texture is set.',
@@ -107,6 +109,41 @@
     if (known.has(p.material)) item.baseMaterial = p.material;
   }
 
+  // ---- armor presets ------------------------------------------------------------------------
+
+  const ARMOR_SLOTS = [
+    { value: 'HELMET', label: 'Helmet' }, { value: 'CHESTPLATE', label: 'Chestplate' },
+    { value: 'LEGGINGS', label: 'Leggings' }, { value: 'BOOTS', label: 'Boots' }
+  ];
+  const armorTierOptions = $derived([
+    ...meta.armorTiers.map((t) => ({ value: t.id, label: t.label })),
+    { value: 'CUSTOM', label: 'Custom' }
+  ]);
+  const armorBase = (slot) => `IRON_${slot}`;
+
+  function applyArmorTier(tier, slot) {
+    const base = meta.armorTiers.find((x) => x.id === tier);
+    if (!base) return;
+    const per = base.slots[slot];
+    Object.assign(item.armor, {
+      tier, slot, defense: per.defense, durability: per.durability, toughness: base.toughness,
+      knockbackResistance: base.knockbackResistance, enchantability: base.enchantability, equipSound: base.equipSound
+    });
+  }
+
+  function setArmorTier(tier) {
+    if (tier === 'CUSTOM') item.armor.tier = 'CUSTOM';
+    else applyArmorTier(tier, item.armor.slot);
+  }
+
+  function setArmorSlot(slot) {
+    if (item.armor.tier === 'CUSTOM') item.armor.slot = slot;
+    else applyArmorTier(item.armor.tier, slot);
+    item.baseMaterial = armorBase(slot);
+  }
+
+  const markArmorCustom = () => (item.armor.tier = 'CUSTOM');
+
   // ---- type switching -----------------------------------------------------------------------
 
   function setType(type) {
@@ -118,9 +155,13 @@
         if (item.tool.tier !== 'CUSTOM') applyTier(item.tool.tier, item.tool.kind);
         item.baseMaterial = toolBase(item.tool.tier === 'CUSTOM' ? 'IRON' : item.tool.tier, item.tool.kind);
       }
+    } else if (type === 'ARMOR') {
+      item.maxStackSize = 1;
+      if (item.armor.tier !== 'CUSTOM') applyArmorTier(item.armor.tier, item.armor.slot);
+      item.baseMaterial = armorBase(item.armor.slot);
     } else {
       if (item.maxStackSize === 1) item.maxStackSize = 64;
-      if (!item.baseMaterial || item.baseMaterial === previousDefault || item.baseMaterial.match(/_(SWORD|PICKAXE|AXE|SHOVEL|HOE)$/)) {
+      if (!item.baseMaterial || item.baseMaterial === previousDefault || item.baseMaterial.match(/_(SWORD|PICKAXE|AXE|SHOVEL|HOE|HELMET|CHESTPLATE|LEGGINGS|BOOTS)$/)) {
         item.baseMaterial = DEFAULT_BASE[type];
       }
     }
@@ -147,7 +188,12 @@
     ['main', 'All faces / fallback'], ['top', 'Top'], ['bottom', 'Bottom'], ['side', 'Sides']
   ];
   const slotsShown = $derived(
-    item.type === 'BLOCK' && item.block.placeable && item.block.textureMode === 'SIDES' ? TEXTURE_SLOTS : TEXTURE_SLOTS.slice(0, 1)
+    item.type === 'BLOCK' && item.block.placeable && item.block.textureMode === 'SIDES' ? TEXTURE_SLOTS
+      : item.type === 'ARMOR' && item.armor.set
+        ? [['main', 'Inventory icon']]
+      : item.type === 'ARMOR'
+        ? [['main', 'Inventory icon'], ['worn', item.armor.slot === 'LEGGINGS' ? 'Worn on the legs (leggings layer)' : 'Worn on the body (armor layer)']]
+        : TEXTURE_SLOTS.slice(0, 1)
   );
   const HARDNESS_PRESETS = [['Dirt', 0.5], ['Stone', 1.5], ['Iron ore', 3], ['Obsidian', 50]];
   const TOOL_OPTIONS = [
@@ -157,17 +203,6 @@
   const textureModeOptions = [
     { value: 'ALL', label: 'One texture, all sides' }, { value: 'SIDES', label: 'Top, bottom and sides' }
   ];
-
-  const RENDERINGS = [
-    { value: 'SOLID', label: 'Solid', hint: 'Normal opaque block' },
-    { value: 'CUTOUT', label: 'See-through', hint: 'Transparent pixels show what is behind (leaves, grates, vines)' },
-    { value: 'TRANSLUCENT', label: 'Glass-like', hint: 'Partly transparent pixels (glass, ice)' }
-  ];
-  const RENDERING_HINT = {
-    SOLID: 'Drawn as a normal solid cube.',
-    CUTOUT: 'Transparent pixels of the texture are see-through and faces next to other blocks are never hidden, so a canopy of these blocks looks like leaves.',
-    TRANSLUCENT: 'For textures with partly transparent pixels, like glass.'
-  };
 
   // sounds: ids come from the server; a sound set fills the place and break sound with a matching pair
   const sounds = $derived(meta.sounds ?? []);
@@ -186,6 +221,13 @@
     else if (item.baseMaterial === 'NOTE_BLOCK') item.baseMaterial = DEFAULT_BASE.BLOCK;
   }
 
+  // A new item's id follows its name until the id was typed by hand.
+  // svelte-ignore state_referenced_locally
+  let idTouched = $state(!isNew);
+  function nameChanged() {
+    if (!idTouched) item.id = /<[^>]*>/.test(item.displayName) || item.displayName ? idFromName(item.displayName, existingIds) : '';
+  }
+
   const idValid = $derived(/^[a-z0-9_]{1,48}$/.test(item.id));
 </script>
 
@@ -197,10 +239,11 @@
         <Chips options={typeOptions} value={item.type} onchange={setType} label="Item type" />
         <div class="grid">
           <label>Name <small>MiniMessage, e.g. &lt;gold&gt;Ruby Pickaxe</small>
-            <input bind:value={item.displayName} placeholder="<gold>Ruby Pickaxe" />
+            <input bind:value={item.displayName} oninput={nameChanged} placeholder="<gold>Ruby Pickaxe" />
           </label>
-          <label>ID <small>lowercase letters, digits, _</small>
-            <input bind:value={item.id} disabled={!isNew} placeholder="ruby_pickaxe" required class:bad={item.id && !idValid} />
+          <label>ID <small>filled in from the name; lowercase letters, digits, _</small>
+            <input bind:value={item.id} disabled={!isNew} placeholder="ruby_pickaxe" required class:bad={item.id && !idValid}
+                   oninput={() => (idTouched = true)} />
           </label>
         </div>
       </section>
@@ -217,13 +260,19 @@
               {/if}
             </div>
             <label class="grow">{slotsShown.length > 1 ? label : 'Texture'}
-              <small>square PNG, up to 1024×1024 and 256 KB (16×16 is typical)</small>
+              {#if slot === 'worn'}
+                <small>PNG, 64×32 like the vanilla armor layers (or square), up to 256 KB. Without it the piece looks like iron armor on the body.</small>
+              {:else}
+                <small>square PNG, up to 1024×1024 and 256 KB (16×16 is typical)</small>
+              {/if}
               <input type="file" accept="image/png" onchange={(e) => onFile(slot, e)} />
             </label>
           </div>
         {/each}
         {#if item.type === 'BLOCK' && item.block.placeable}
           <small class="muted">Placeable blocks are note blocks, so the base item is fixed.</small>
+        {:else if item.type === 'ARMOR'}
+          <small class="muted">The base item follows the piece ({item.baseMaterial.toLowerCase().replaceAll('_', ' ')}); stats and look come from this editor.</small>
         {:else}
           <label>Base item <small>vanilla item this is built on</small>
             <MaterialPicker bind:value={item.baseMaterial} options={pickerOptions} {known}
@@ -257,6 +306,40 @@
             <small class="muted">Swords have no mining rules here; they only deal damage.</small>
           {/if}
         </section>
+      {:else if item.type === 'ARMOR'}
+        <section class="card">
+          <h3>3 · Armor</h3>
+          <label class="check">
+            <input type="checkbox" checked={!!item.armor.set}
+                   onchange={(e) => (e.target.checked ? onarmorset?.($state.snapshot(item), !isNew) : (item.armor.set = ''))} />
+            Armor set <small>(one to four pieces edited together; every piece stays its own item)</small>
+          </label>
+          {#if item.armor.set}
+            <div class="notice">
+              This piece belongs to the armor set <strong>{item.armor.set}</strong>. Its stats, name and worn texture come from
+              the set. Untick "Armor set" and save to make it a single item again (it keeps its look).
+              {#if onopenset}<button type="button" onclick={() => onopenset(item.armor.set)}>Open the armor set</button>{/if}
+            </div>
+          {/if}
+          <fieldset class="plain" disabled={!!item.armor.set}>
+          <span class="lbl">Piece</span>
+          <Chips options={ARMOR_SLOTS} value={item.armor.slot} onchange={setArmorSlot} label="Armor piece" />
+          <span class="lbl">Material tier <small>fills in vanilla stats - change any value afterwards</small></span>
+          <Chips options={armorTierOptions} value={item.armor.tier} onchange={setArmorTier} label="Armor tier" />
+          <div class="grid">
+            <label>Armor points <input type="number" step="0.5" min="0" max="30" bind:value={item.armor.defense} oninput={markArmorCustom} /></label>
+            <label>Toughness <input type="number" step="0.5" min="0" max="20" bind:value={item.armor.toughness} oninput={markArmorCustom} /></label>
+            <label>Knockback resistance <small>0.1 = 10 %</small>
+              <input type="number" step="0.05" min="0" max="1" bind:value={item.armor.knockbackResistance} oninput={markArmorCustom} />
+            </label>
+            <label>Durability <input type="number" min="1" bind:value={item.armor.durability} oninput={markArmorCustom} /></label>
+            <label>Enchantability <input type="number" min="0" bind:value={item.armor.enchantability} oninput={markArmorCustom} /></label>
+          </div>
+          <label>Equip sound <small>sound id when put on, e.g. item.armor.equip_iron</small>
+            <SoundInput bind:value={item.armor.equipSound} {sounds} id="sound-equip" placeholder="item.armor.equip_iron" />
+          </label>
+          </fieldset>
+        </section>
       {:else if item.type === 'FOOD'}
         <section class="card">
           <h3>3 · Food</h3>
@@ -286,8 +369,6 @@
             {/if}
             <span class="lbl">Textures</span>
             <Chips options={textureModeOptions} value={item.block.textureMode} onchange={(v) => (item.block.textureMode = v)} label="Texture mode" />
-            <span class="lbl">Look <small>{RENDERING_HINT[item.block.rendering]}</small></span>
-            <Chips options={RENDERINGS} value={item.block.rendering} onchange={(v) => (item.block.rendering = v)} label="Rendering" />
             <div class="grid">
               <label>Hardness <small>higher = slower to break</small>
                 <input type="number" step="any" min="0.05" max="100" bind:value={item.block.hardness} />

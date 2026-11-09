@@ -26,6 +26,12 @@ public interface PackFormat {
     Map<String, byte[]> itemFiles(String namespace, ItemDefinition item, Map<String, byte[]> textures);
 
     /**
+     * The equipment asset of an armor set: one asset named after the set, shared by all its pieces. {@code textures}
+     * holds the existing worn textures by slot ("humanoid", "leggings"); nothing is produced without any.
+     */
+    Map<String, byte[]> armorSetFiles(String namespace, dev.fosk.additems.item.ArmorSetDefinition set, Map<String, byte[]> textures);
+
+    /**
      * The block state file that maps custom block states to their models (note block). {@code blocks} are the
      * placeable blocks that have a model; {@code allVariants} lists every valid variant key of the note block so the
      * untouched ones keep their vanilla model. Returns nothing when there is no custom block.

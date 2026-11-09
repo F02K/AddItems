@@ -24,15 +24,20 @@ public final class ItemRegistry {
 
     public static final long MAX_TEXTURE_BYTES = 256 * 1024;
 
-    /** Texture slots: "main" is the item texture / all block faces; the others are block faces. */
+    /**
+     * Texture slots: "main" is the item texture / all block faces; top, bottom and side are block faces; "worn" is the
+     * texture drawn on the body for armor (64x32 or square, not the inventory icon).
+     */
     public static final String MAIN = "main";
-    public static final Set<String> SLOTS = Set.of(MAIN, "top", "bottom", "side");
+    public static final String WORN = "worn";
+    public static final Set<String> SLOTS = Set.of(MAIN, "top", "bottom", "side", WORN);
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Path itemsDir;
     private final Path texturesDir;
     private final Logger log;
+    private final ArmorSets armorSets;
     private final Map<String, ItemDefinition> items = new ConcurrentHashMap<>();
     /** Block states custom blocks may use (set by the plugin from the server's note block states). */
     private volatile List<String> statePool = List.of();
@@ -43,6 +48,12 @@ public final class ItemRegistry {
         this.itemsDir = dataFolder.resolve("items");
         this.texturesDir = dataFolder.resolve("textures");
         this.log = log;
+        this.armorSets = new ArmorSets(dataFolder, this, log);
+    }
+
+    /** The armor sets; their pieces are ordinary items of this registry. */
+    public ArmorSets armorSets() {
+        return armorSets;
     }
 
     public void setSoundValidator(java.util.function.Predicate<String> validator) {
@@ -56,6 +67,7 @@ public final class ItemRegistry {
     public void load() throws IOException {
         Files.createDirectories(itemsDir);
         Files.createDirectories(texturesDir);
+        armorSets.load(); // before the items: whether a piece has a worn texture depends on its set
         items.clear();
         try (Stream<Path> files = Files.list(itemsDir)) {
             for (Path file : (Iterable<Path>) files.filter(p -> p.toString().endsWith(".json"))::iterator) {
@@ -70,6 +82,7 @@ public final class ItemRegistry {
                     String soundProblem = checkSounds(def);
                     if (soundProblem != null) log.warning("Item " + def.id + ": " + soundProblem + " (the sound will be silent)");
                     def.hasTexture = computeHasTexture(def);
+                    def.hasWornTexture = computeHasWorn(def);
                     items.put(def.id, def);
                 } catch (Exception e) {
                     log.warning("Skipping " + file.getFileName() + ": " + e.getMessage());
@@ -124,17 +137,42 @@ public final class ItemRegistry {
         normalizeSounds(def); // before validation: a pasted space or "minecraft:" must not make a good sound invalid
         String error = def.validate();
         if (error != null) return error;
+        if (def.type == ItemType.ARMOR && armorSets.get(def.id) != null
+                && (def.armor.set == null || !def.armor.set.equals(def.id))
+                && !isPieceOfSet(def.id, armorSets.get(def.id))) {
+            return "an armor set with this id exists";
+        }
+        ItemDefinition before = items.get(def.id);
+        boolean leavesSet = before != null && before.type == ItemType.ARMOR && before.armor.set != null
+                && !before.armor.set.isEmpty() && (def.type != ItemType.ARMOR || def.armor.set == null || def.armor.set.isEmpty());
         error = checkSounds(def);
         if (error != null) return error;
         error = assignBlockState(def);
         if (error != null) return error;
         def.hasTexture = computeHasTexture(def);
+        def.hasWornTexture = computeHasWorn(def);
         Path file = itemsDir.resolve(def.id + ".json");
         try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             GSON.toJson(def, writer);
         }
         items.put(def.id, def);
+        if (leavesSet) {
+            // the piece became a single item: it keeps the shared worn texture, the set forgets the slot
+            ArmorSetDefinition oldSet = armorSets.get(before.armor.set);
+            if (oldSet != null && def.type == ItemType.ARMOR) {
+                def.armor.slot = before.armor.slot;
+                armorSets.detachWornTexture(def, oldSet);
+                def.hasWornTexture = computeHasWorn(def);
+            }
+            armorSets.pieceDeleted(before);
+        }
         return null;
+    }
+
+    private static boolean isPieceOfSet(String itemId, ArmorSetDefinition set) {
+        if (set == null) return false;
+        for (ItemDefinition.ArmorSlot slot : set.pieces.keySet()) if (set.itemId(slot).equals(itemId)) return true;
+        return false;
     }
 
     /** Trims the block sounds and drops the default "minecraft:" namespace. */
@@ -196,10 +234,26 @@ public final class ItemRegistry {
 
     public synchronized boolean delete(String id) throws IOException {
         if (id == null || !ItemDefinition.ID_PATTERN.matcher(id).matches()) return false;
-        boolean existed = items.remove(id) != null;
+        ItemDefinition removed = items.remove(id);
         Files.deleteIfExists(itemsDir.resolve(id + ".json"));
         for (String slot : SLOTS) Files.deleteIfExists(textureFile(id, slot));
-        return existed;
+        if (removed != null) armorSets.pieceDeleted(removed);
+        return removed != null;
+    }
+
+    /** Deletes an item without touching its armor set (used by the set itself). */
+    synchronized void deleteQuietly(String id) throws IOException {
+        if (id == null || !ItemDefinition.ID_PATTERN.matcher(id).matches()) return;
+        items.remove(id);
+        Files.deleteIfExists(itemsDir.resolve(id + ".json"));
+        for (String slot : SLOTS) Files.deleteIfExists(textureFile(id, slot));
+    }
+
+    /** A worn texture of a set changed: its pieces must see it. */
+    synchronized void refreshWornFlags(String setId) {
+        for (ItemDefinition def : items.values()) {
+            if (def.type == ItemType.ARMOR && setId.equals(def.armor.set)) def.hasWornTexture = computeHasWorn(def);
+        }
     }
 
     // ------------------------------------------------------------------ textures
@@ -213,6 +267,7 @@ public final class ItemRegistry {
         if (def == null) throw new IllegalArgumentException("unknown item");
         Files.write(textureFile(id, slot), png);
         def.hasTexture = computeHasTexture(def);
+        def.hasWornTexture = computeHasWorn(def);
     }
 
     public byte[] readTexture(String id) throws IOException {
@@ -239,11 +294,17 @@ public final class ItemRegistry {
     /** All textures that exist for an item, keyed by slot. */
     public Map<String, byte[]> readTextures(String id) throws IOException {
         Map<String, byte[]> out = new LinkedHashMap<>();
-        for (String slot : List.of(MAIN, "top", "bottom", "side")) {
+        for (String slot : List.of(MAIN, "top", "bottom", "side", WORN)) {
             byte[] data = readTexture(id, slot);
             if (data != null) out.put(slot, data);
         }
         return out;
+    }
+
+    private boolean computeHasWorn(ItemDefinition def) {
+        if (def.type != ItemType.ARMOR) return false;
+        if (def.armor.set != null && !def.armor.set.isEmpty()) return armorSets.hasWornFor(def.armor.set, def.armor.slot);
+        return Files.isRegularFile(textureFile(def.id, WORN));
     }
 
     /** An item counts as textured when its model can be drawn from the files that exist. */

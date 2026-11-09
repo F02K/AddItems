@@ -6,7 +6,7 @@
   // A custom item (or a missing one that a recipe still points at).
   let { data, selected } = $props();
   const pos = $derived(handlePositions(data.direction));
-  const TYPE = { GENERIC: 'Item', FOOD: 'Food', TOOL: 'Tool', BLOCK: 'Block' };
+  const TYPE = { GENERIC: 'Item', FOOD: 'Food', TOOL: 'Tool', BLOCK: 'Block', ARMOR: 'Armor' };
   let broken = $state(false);
 </script>
 

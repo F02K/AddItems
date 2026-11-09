@@ -4,7 +4,7 @@
   import { parseRef, refLabel } from './lib/refs.js';
 
   // One clickable ingredient / result cell. Click to choose, x to clear.
-  let { value = '', items, meta, label = '', allowTags = true, big = false, onchange } = $props();
+  let { value = '', items, meta, label = '', allowTags = true, big = false, locked = false, onchange } = $props();
 
   let open = $state(false);
   const p = $derived(parseRef(value, meta.customNamespace));
@@ -14,7 +14,7 @@
 
 <div class="cell" class:big>
   <button type="button" class="slot" class:blank={!value} title={text || label} aria-label={text || label || 'Choose item'}
-          onclick={() => (open = true)}>
+          disabled={locked} onclick={() => (open = true)}>
     {#if custom?.hasTexture}
       <img src={`/api/items/${custom.id}/texture`} alt="" />
     {:else if p?.kind === 'VANILLA'}
@@ -25,7 +25,7 @@
       <span class="plus">+</span>
     {/if}
   </button>
-  {#if value}
+  {#if value && !locked}
     <button type="button" class="clear" aria-label="Clear" onclick={() => onchange('')}>×</button>
   {/if}
 </div>

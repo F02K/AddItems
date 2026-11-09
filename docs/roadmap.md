@@ -9,7 +9,9 @@ Next:
 3. Placeable custom blocks: DONE for full cubes via note block states (see architecture.md). Open: light emission, custom
    step sounds, non-cube shapes and furniture (item displays), per-tool mining speed, tripwire/mushroom states for more than
    ~550 blocks, creative pick-block, in-game verification.
-4. Armor via `equippable` + equipment assets, set bonuses.
+4. Armor: DONE (type, presets, equippable + equipment assets, armor sets with 1-4 pieces and shared textures, see architecture.md).
+   Open: set bonuses, in-game verification, trims, elytra. Recipes/drops are editable inside the item editor (done).
+   Transparent / non-cube blocks: dropped. Only option left would be furniture-style item displays + barrier + interaction entity.
 4b. Drops and loot: DONE for block breaking, mob kills and chest loot (see architecture.md). Open: fishing, explosions,
    drops for custom blocks (needs step 3), per-world filters.
 4c. Item graph tab: DONE (view, highlight, shared layout, creating recipes and drop rules by dragging). Open: deleting or

@@ -13,11 +13,18 @@ export const blankLootRule = () => ({
 
 export const blankDrop = () => ({ item: '', min: 1, max: 1, chance: 100, chanceBonusPerLevel: 0, amountBonusPerLevel: 0 });
 
-/** A valid, unused id ([a-z0-9_], at most 48 characters) derived from free text. */
-export function uniqueId(base, existing) {
+/**
+ * A valid, unused id ([a-z0-9_], at most `max` characters including a "_2" style suffix) derived from free text.
+ * This is only a suggestion for the form: the server has the last word (see POST /api/recipes) and never overwrites.
+ */
+export function uniqueId(base, existing, max = 48) {
   const clean = (base || 'entry').toLowerCase().replaceAll(/[^a-z0-9_]+/g, '_').replaceAll(/^_+|_+$/g, '') || 'entry';
   const taken = new Set(existing);
-  let id = clean.slice(0, 44);
-  for (let n = 2; taken.has(id); n++) id = `${clean.slice(0, 44)}_${n}`;
+  const stem = clean.slice(0, max - 4);
+  let id = clean.slice(0, max);
+  for (let n = 2; taken.has(id); n++) id = `${stem}_${n}`;
   return id;
 }
+
+/** An id suggestion from a MiniMessage display name ("<gold>Ruby Pickaxe" -> "ruby_pickaxe"). */
+export const idFromName = (name, existing, max = 48) => uniqueId((name ?? '').replace(/<[^>]*>/g, ''), existing, max);

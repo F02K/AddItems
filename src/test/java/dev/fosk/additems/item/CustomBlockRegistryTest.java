@@ -173,20 +173,6 @@ class CustomBlockRegistryTest {
     }
 
     @Test
-    void renderingMustBeOneOfTheKnownModes() {
-        for (String mode : new String[]{"SOLID", "CUTOUT", "TRANSLUCENT"}) {
-            ItemDefinition def = block("x");
-            def.block.rendering = mode;
-            assertNull(def.validate(), mode);
-        }
-        ItemDefinition bad = block("x");
-        bad.block.rendering = "GLOWING";
-        assertNotNull(bad.validate());
-        bad.block.rendering = null;
-        assertNotNull(bad.validate());
-    }
-
-    @Test
     void unknownTextureSlotsAreRejected() throws Exception {
         registry.save(block("a"));
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,

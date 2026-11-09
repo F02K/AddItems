@@ -10,8 +10,6 @@
 
   // svelte-ignore state_referenced_locally
   let r = $state($state.snapshot(initial));
-  // svelte-ignore state_referenced_locally
-  let idTouched = $state(!isNew);
   let picking = $state(false);
 
   const triggerOptions = TRIGGERS.map((t) => ({ value: t.value, label: t.label, hint: t.hint }));
@@ -42,15 +40,6 @@
     }
     const without = r.targets.filter((t) => t !== '*');
     r.targets = without.includes(target) ? without.filter((t) => t !== target) : [...without, target];
-    suggestId();
-  }
-
-  function suggestId() {
-    if (idTouched || r.id || !r.targets.length) return;
-    const base = (r.targets[0].split(':')[1] ?? 'loot').replaceAll(/[^a-z0-9_]/g, '_').replaceAll('__', '_');
-    let candidate = `${base}_drops`;
-    for (let n = 2; existingIds.includes(candidate); n++) candidate = `${base}_drops_${n}`;
-    r.id = candidate.slice(0, 48);
   }
 
   const newDrop = () => ({ item: '', min: 1, max: 1, chance: 100, chanceBonusPerLevel: 0, amountBonusPerLevel: 0 });
@@ -58,9 +47,8 @@
   const removeDrop = (i) => (r.drops = r.drops.filter((_, k) => k !== i));
   const keepRange = (d) => { if (d.max < d.min) d.max = d.min; };
 
-  const idValid = $derived(/^[a-z0-9_]{1,48}$/.test(r.id));
   const ready = $derived(
-    idValid && r.targets.length > 0 && r.drops.length > 0 &&
+    r.targets.length > 0 && r.drops.length > 0 &&
       r.drops.every((d) => d.item && d.min >= 1 && d.max >= d.min && d.chance > 0 && d.chance <= 100)
   );
 
@@ -149,10 +137,7 @@
     <aside class="side">
       <div class="card sticky">
         <h3>Save</h3>
-        <label>Rule ID <small>lowercase letters, digits, _</small>
-          <input bind:value={r.id} disabled={!isNew} required class:bad={r.id && !idValid}
-                 oninput={() => (idTouched = true)} placeholder="zombie_drops" />
-        </label>
+        {#if !isNew}<small class="muted">ID: {r.id}</small>{/if}
         <p class="muted summary">
           {#if r.targets.length && r.drops.some((d) => d.item)}
             {triggerInfo?.label}: {r.targets.slice(0, 3).map((t) => targetLabel(r.trigger, t, items, meta.customNamespace)).join(', ')}{r.targets.length > 3 ? ` +${r.targets.length - 3}` : ''}

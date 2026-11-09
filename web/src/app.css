@@ -200,7 +200,7 @@ button.add { border-style: dashed; color: var(--muted); }
 .gnode.hub { width: 150px; padding: 6px 10px; }
 .gnode.recipe { border-color: #d97706; background: color-mix(in srgb, #d97706 10%, var(--panel)); }
 .gnode.loot { border-color: #16a34a; background: color-mix(in srgb, #16a34a 10%, var(--panel)); }
-.gnode.source { width: 160px; border-color: #0891b2; }
+.gnode.trigger { width: 160px; border-color: #0891b2; }
 .gnode.transient { border-style: dashed; }
 .gnode.selected { outline: 2px solid var(--accent); }
 .gnode.missing, .gnode.problem { border-color: var(--danger); border-style: dashed; }
@@ -230,7 +230,7 @@ button.add { border-style: dashed; color: var(--muted); }
 /* larger connection handles: the default dots are too small to hit when the graph is zoomed out */
 .gnode .svelte-flow__handle { width: 11px; height: 11px; background: var(--accent); border: 2px solid var(--panel); }
 .gnode .svelte-flow__handle:hover { transform: scale(1.4); }
-.svelte-flow__node:has(.gnode.vanilla) .svelte-flow__handle, .svelte-flow__node:has(.gnode.source) .svelte-flow__handle { background: #0891b2; }
+.svelte-flow__node:has(.gnode.vanilla) .svelte-flow__handle, .svelte-flow__node:has(.gnode.trigger) .svelte-flow__handle { background: #0891b2; }
 
 /* ---- graph detail panel: recipes drawn like Minecraft's screens ---- */
 .detail { background: var(--panel); border-top: 1px solid var(--border); max-height: 42vh; overflow: auto; padding: 8px 12px 12px; }
@@ -289,3 +289,39 @@ button.add { border-style: dashed; color: var(--muted); }
 .soundinput .suggest li.on button { background: var(--accent); color: #fff; }
 .soundinput .suggest button { width: 100%; text-align: left; border: 0; background: transparent; padding: 4px 8px; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 0.8rem; }
 .linklike { border: 0; background: transparent; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+
+/* rules of one item (recipes and drops inside the item editor) */
+.rules { margin-top: 14px; }
+.rules .rule-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.rules .rule-group h4 { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 0.85rem; }
+.rules .rule { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; text-align: left; }
+.rules .rule small { color: var(--muted); }
+.modal.wide { display: block; width: min(1100px, 100%); max-height: 90vh; overflow: auto; }
+.modal.wide .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+
+/* armor sets */
+fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; display: contents; }
+.pieces { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.pieces th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.85rem; }
+.pieces td, .pieces th { padding: 4px 6px 4px 0; }
+.pieces input { width: 100%; }
+.icons { display: flex; flex-direction: column; gap: 8px; }
+.slot.wide { width: 96px; }
+
+/* tabs inside an item: Item | Recipes | Drops */
+.itemtabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.itemtabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 6px 14px; }
+.itemtabs button.on { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
+.itemtabs button:disabled { opacity: 0.45; cursor: not-allowed; }
+.subtab { display: flex; flex-direction: column; gap: 12px; }
+.rule-list { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rule-list h4 { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 0.85rem; }
+.rule-list .rule { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; text-align: left; }
+.rule-list .rule small { color: var(--muted); }
+.rule-list .rule.on { border-color: var(--accent); }
+
+/* armor set rows in the item list */
+nav li.setrow { display: grid; gap: 2px; }
+nav .sethead { display: grid; grid-template-columns: auto 1fr; gap: 2px; align-items: stretch; }
+nav .sethead .fold { width: 24px; padding: 0; border: 0; background: transparent; color: var(--muted); }
+nav ul.sub { margin: 0 0 4px 22px; padding-left: 6px; border-left: 1px solid var(--border); }

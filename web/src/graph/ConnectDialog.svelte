@@ -79,11 +79,11 @@
     try {
       if (mode === 'recipe') {
         const recipe = buildRecipe();
-        await api.saveRecipe(recipe);
+        await api.createRecipe(recipe);
         oncreated(`Recipe "${recipe.id}" created: ${fromName} → ${toName}`);
       } else {
         const rule = buildRule();
-        await api.saveLoot(rule);
+        await api.createLoot(rule);
         oncreated(`Drop rule "${rule.id}" created: ${targetLabel(rule.trigger, rule.targets[0], items, ns)} drops ${toName}`);
       }
     } catch (e) {

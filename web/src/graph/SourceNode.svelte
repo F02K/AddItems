@@ -15,7 +15,7 @@
   const sub = $derived({ BLOCK: 'block broken', MOB: 'mob killed', CHEST: 'chest loot' }[data.trigger]);
 </script>
 
-<div class="gnode source" class:selected class:transient={data.transient} title={data.targets.join(', ')}>
+<div class="gnode trigger" class:selected class:transient={data.transient} title={data.targets.join(', ')}>
   <span class="gicon small">{#if icon}<VanillaIcon name={icon} size={24} text={false} />{/if}</span>
   <span class="gtext">
     <strong title={label}>{label}</strong>

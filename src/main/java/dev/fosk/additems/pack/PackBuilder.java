@@ -52,6 +52,14 @@ public final class PackBuilder {
                 blocks.add(item);
             }
         }
+        for (var set : registry.armorSets().all()) {
+            Map<String, byte[]> worn = new java.util.HashMap<>();
+            for (String slot : dev.fosk.additems.item.ArmorSets.TEXTURE_SLOTS) {
+                byte[] data = registry.armorSets().readTexture(set.id, slot);
+                if (data != null) worn.put(slot, data);
+            }
+            files.putAll(format.armorSetFiles(namespace, set, worn));
+        }
         files.putAll(format.blockstateFiles(namespace, blocks, noteVariants));
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();

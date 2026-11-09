@@ -29,4 +29,12 @@ class PngValidationTest {
         assertEquals("texture larger than 1024x1024", DashboardServer.validatePng(png(2048, 2048)));
         assertNotNull(DashboardServer.validatePng("<svg/>".getBytes()));
     }
+
+    @Test
+    void wornArmorTextureMayBeTwiceAsWide() throws Exception {
+        assertNull(DashboardServer.validatePng(png(64, 32), true));
+        assertNull(DashboardServer.validatePng(png(64, 64), true));
+        assertEquals("texture must be square", DashboardServer.validatePng(png(64, 32)));
+        assertNotNull(DashboardServer.validatePng(png(64, 48), true));
+    }
 }

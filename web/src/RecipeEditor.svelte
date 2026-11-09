@@ -3,12 +3,10 @@
   import Slot from './Slot.svelte';
   import { parseRef, refLabel } from './lib/refs.js';
 
-  let { initial, isNew, meta, items, existingIds, status, statusError, onsave, ondelete } = $props();
+  let { initial, isNew, meta, items, existingIds, status, statusError, onsave, ondelete, lockResult = false } = $props();
 
   // svelte-ignore state_referenced_locally
   let r = $state($state.snapshot(initial));
-  // svelte-ignore state_referenced_locally
-  let idTouched = $state(!isNew);
 
   const typeOptions = $derived(meta.recipeTypes.map((t) => ({ value: t.id, label: t.label, hint: t.hint })));
   const info = $derived(meta.recipeTypes.find((t) => t.id === r.type));
@@ -29,17 +27,10 @@
 
   function setResult(ref) {
     r.result = ref;
-    if (!idTouched && !r.id && ref) {
-      const base = (parseRef(ref, meta.customNamespace)?.name ?? 'recipe').replaceAll(/[^a-z0-9_]/g, '_');
-      let candidate = base;
-      for (let n = 2; existingIds.includes(candidate); n++) candidate = `${base}_${n}`;
-      r.id = candidate.slice(0, 48);
-    }
   }
 
   const setCell = (i, ref) => (r.grid[i] = ref);
-  const idValid = $derived(/^[a-z0-9_]{1,48}$/.test(r.id));
-  const ready = $derived(idValid && !!r.result);
+  const ready = $derived(!!r.result);
 
   function submit(event) {
     event.preventDefault();
@@ -67,14 +58,14 @@
               {/each}
             </div>
             <span class="arrow">→</span>
-            <Slot value={r.result} {items} {meta} allowTags={false} big label="Result" onchange={setResult} />
+            <Slot value={r.result} {items} {meta} allowTags={false} big locked={lockResult} label="Result" onchange={setResult} />
           </div>
           {#if r.type === 'SHAPELESS'}<small class="muted">Order does not matter; place the ingredients anywhere.</small>{/if}
         {:else if isCooking || r.type === 'STONECUTTING'}
           <div class="craft">
             <Slot value={r.input} {items} {meta} label="Input" onchange={(ref) => (r.input = ref)} />
             <span class="arrow">→</span>
-            <Slot value={r.result} {items} {meta} allowTags={false} big label="Result" onchange={setResult} />
+            <Slot value={r.result} {items} {meta} allowTags={false} big locked={lockResult} label="Result" onchange={setResult} />
           </div>
         {:else if r.type === 'SMITHING'}
           <div class="craft">
@@ -89,7 +80,7 @@
                 <Slot value={r.addition} {items} {meta} label="Addition" onchange={(ref) => (r.addition = ref)} /></div>
             </div>
             <span class="arrow">→</span>
-            <Slot value={r.result} {items} {meta} allowTags={false} big label="Result" onchange={setResult} />
+            <Slot value={r.result} {items} {meta} allowTags={false} big locked={lockResult} label="Result" onchange={setResult} />
           </div>
         {:else if r.type === 'ANVIL'}
           <div class="craft">
@@ -101,7 +92,7 @@
                 <Slot value={r.right} {items} {meta} label="Right" onchange={(ref) => (r.right = ref)} /></div>
             </div>
             <span class="arrow">→</span>
-            <Slot value={r.result} {items} {meta} allowTags={false} big label="Result" onchange={setResult} />
+            <Slot value={r.result} {items} {meta} allowTags={false} big locked={lockResult} label="Result" onchange={setResult} />
           </div>
         {/if}
 
@@ -134,10 +125,7 @@
     <aside class="side">
       <div class="card sticky">
         <h3>Save</h3>
-        <label>Recipe ID <small>lowercase letters, digits, _</small>
-          <input bind:value={r.id} disabled={!isNew} required class:bad={r.id && !idValid}
-                 oninput={() => (idTouched = true)} placeholder="ruby_pickaxe" />
-        </label>
+        {#if !isNew}<small class="muted">ID: {r.id}</small>{/if}
         <p class="muted summary">
           {#if r.result}Makes <strong>{r.amount > 1 ? r.amount + '× ' : ''}{refLabel(r.result, items, meta.customNamespace)}</strong>
             at the {info?.label.toLowerCase()}.{:else}Choose a result item.{/if}
