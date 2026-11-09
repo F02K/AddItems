@@ -1,0 +1,29 @@
+# AddItems configuration
+
+dashboard:
+  # Loopback by default. Only expose this (0.0.0.0) behind HTTPS / a reverse proxy.
+  bind: 127.0.0.1
+  port: 8123
+  # Base URL placed in the login links sent in-game, e.g. https://items.example.com
+  # Leave empty to derive http://<bind>:<port>.
+  public-url: ""
+
+vanilla-assets:
+  # Downloads Mojang's official client.jar for this Minecraft version ONCE (about 40 MB, SHA-1 verified) and
+  # extracts item/block textures into plugins/AddItems/cache/ so the dashboard can show vanilla item icons and
+  # English names. Files stay on this server and are never redistributed. Set to false to disable.
+  enabled: true
+
+pack:
+  # The resource pack is served by its own listener because players must be able to reach it.
+  bind: 0.0.0.0
+  port: 8124
+  # URL players use to download the pack, e.g. http://play.example.com:8124
+  # Leave empty to disable sending the pack to players.
+  public-url: ""
+  # Send the pack to players when they join, and require it.
+  send-on-join: true
+  required: false
+  prompt: "AddItems custom item textures"
+  # Namespace used for all generated assets.
+  namespace: additems

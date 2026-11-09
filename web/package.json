@@ -1,0 +1,21 @@
+{
+  "name": "additems-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.3",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^3.1.3",
+    "@xyflow/svelte": "^1.7.1"
+  }
+}

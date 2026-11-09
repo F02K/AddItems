@@ -1,0 +1,15 @@
+name: AddItems
+version: '${version}'
+main: dev.fosk.additems.AddItemsPlugin
+api-version: '${apiVersion}'
+authors: [FOSK]
+description: Create custom items via a web dashboard and deliver them with a generated resource pack.
+commands:
+  additems:
+    description: AddItems main command
+    usage: /additems <login|give|list|reload|pack>
+    permission: additems.admin
+permissions:
+  additems.admin:
+    description: Manage AddItems and open the dashboard
+    default: op

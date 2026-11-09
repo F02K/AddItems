@@ -22,3 +22,22 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Gradle / build output
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Web dashboard
+web/node_modules/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Local test server
+run/
+
+# Mojang assets downloaded at runtime must never be committed
+**/cache/vanilla/
